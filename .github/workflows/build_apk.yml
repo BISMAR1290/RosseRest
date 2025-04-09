@@ -76,7 +76,6 @@ jobs:
           buildozer init || true
           echo "Configurando buildozer.spec..."
           
-          # Crear buildozer.spec manualmente si es necesario
           if [ ! -f buildozer.spec ]; then
             cat > buildozer.spec <<EOL
 [app]
@@ -94,7 +93,6 @@ android.p4a_dir = $HOME/.local/share/python-for-android
 EOL
           fi
 
-          # Configuración adicional
           sed -i 's/#android.accept_sdk_license = False/android.accept_sdk_license = True/' buildozer.spec
           sed -i "s|#android.sdk_path =|android.sdk_path = $HOME/android-sdk|" buildozer.spec
           sed -i "s|#android.ndk_path =|android.ndk_path = $HOME/android-sdk/ndk/25.2.9519653|" buildozer.spec
