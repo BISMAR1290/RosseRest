@@ -20,9 +20,9 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential ccache git zip unzip openjdk-17-jdk python3-pip
+          sudo apt install -y build-essential ccache git zip unzip openjdk-17-jdk python3-pip libssl-dev
           pip install buildozer cython
-          buildozer android clean  # Fuerza limpieza y descarga completa del SDK
+          buildozer android update  # crea .buildozer y descarga SDK/NDK
 
       - name: Build APK
         run: |
