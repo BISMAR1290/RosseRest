@@ -30,26 +30,31 @@ jobs:
           unzip sdk.zip -d $HOME/android-sdk/cmdline-tools
           mv $HOME/android-sdk/cmdline-tools/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
 
-          # Componentes específicos que funcionan con Buildozer
           yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/android-sdk \
             "platform-tools" "platforms;android-33" "build-tools;30.0.3" "ndk;25.2.9519653"
 
-          # Configuración crítica de variables de entorno
           echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
           echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
           echo "PATH=$HOME/android-sdk/platform-tools:$HOME/android-sdk/build-tools/30.0.3:$PATH" >> $GITHUB_ENV
           
-          # Verificar instalación de AIDL
-          ls -la $HOME/android-sdk/build-tools/30.0.3/aidl
-          $HOME/android-sdk/build-tools/30.0.3/aidl --version || true
+          chmod +x $HOME/android-sdk/build-tools/30.0.3/aidl
 
       - name: Configure Buildozer
         run: |
-          buildozer init
-          # Configuraciones esenciales para evitar errores
+          if [ -f buildozer.spec ]; then
+            echo "buildozer.spec ya existe, actualizando configuraciones clave..."
+            OLD_SDK_PATH=$(grep '^android.sdk_path' buildozer.spec || echo '')
+            OLD_NDK_PATH=$(grep '^android.ndk_path' buildozer.spec || echo '')
+          else
+            buildozer init
+          fi
+
           sed -i 's/#android.accept_sdk_license = False/android.accept_sdk_license = True/' buildozer.spec
-          sed -i 's/#android.sdk_path = /android.sdk_path = $HOME\/android-sdk/' buildozer.spec
-          sed -i 's/#android.ndk_path = /android.ndk_path = $HOME\/android-sdk\/ndk\/25.2.9519653/' buildozer.spec
+          sed -i "s|#android.sdk_path =|android.sdk_path = $HOME/android-sdk|" buildozer.spec
+          sed -i "s|#android.ndk_path =|android.ndk_path = $HOME/android-sdk/ndk/25.2.9519653|" buildozer.spec
+          
+          if [ -n "$OLD_SDK_PATH" ]; then echo "$OLD_SDK_PATH" >> buildozer.spec; fi
+          if [ -n "$OLD_NDK_PATH" ]; then echo "$OLD_NDK_PATH" >> buildozer.spec; fi
 
       - name: Build APK
         run: |
@@ -61,10 +66,3 @@ jobs:
         with:
           name: app-debug.apk
           path: bin/*.apk
-
-      - name: Upload build log
-        uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: build-log
-          path: build.log
