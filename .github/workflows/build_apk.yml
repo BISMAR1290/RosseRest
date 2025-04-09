@@ -20,9 +20,21 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential ccache git zip unzip openjdk-17-jdk python3-pip libssl-dev
+          sudo apt install -y build-essential ccache git zip unzip openjdk-17-jdk python3-pip libssl-dev curl
           pip install buildozer cython
-          buildozer android update  # crea .buildozer y descarga SDK/NDK
+
+      - name: Install Android SDK and AIDL
+        run: |
+          mkdir -p $HOME/android-sdk
+          curl -o sdk.zip https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+          unzip sdk.zip -d $HOME/android-sdk/cmdline-tools
+          mv $HOME/android-sdk/cmdline-tools/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
+
+          yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/android-sdk \
+            "platform-tools" "platforms;android-33" "build-tools;33.0.2" "ndk;25.2.9519653"
+
+          echo "export ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "export PATH=$HOME/android-sdk/platform-tools:$PATH" >> $GITHUB_ENV
 
       - name: Build APK
         run: |
