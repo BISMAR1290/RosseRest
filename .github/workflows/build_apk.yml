@@ -7,15 +7,15 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30  # Aumenta el tiempo de espera
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Necesario para clones completos
+          fetch-depth: 0
 
-      - name: Clean previous builds
+      - name: Clean environment
         run: |
           rm -rf .buildozer
           rm -f *.spec
@@ -46,6 +46,7 @@ jobs:
 
           pip install --upgrade pip wheel setuptools
           pip install buildozer cython==0.29.36 virtualenv
+          pip install --force-reinstall python-for-android
 
       - name: Install Android SDK
         run: |
@@ -65,32 +66,52 @@ jobs:
           echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
           echo "PATH=$HOME/android-sdk/platform-tools:$HOME/android-sdk/build-tools/34.0.0:$HOME/android-sdk/cmdline-tools/latest/bin:$PATH" >> $GITHUB_ENV
 
+      - name: Pre-create p4a directory
+        run: |
+          mkdir -p $HOME/.local/share/python-for-android
+          mkdir -p $HOME/work/RosseRest/RosseRest/.buildozer/android/platform/python-for-android
+
       - name: Initialize Buildozer
         run: |
-          buildozer init
-          buildozer android clean
+          buildozer init || true
+          echo "Configurando buildozer.spec..."
           
-          # Configuración crítica
+          # Crear buildozer.spec manualmente si es necesario
+          if [ ! -f buildozer.spec ]; then
+            cat > buildozer.spec <<EOL
+[app]
+title = RosseRest
+package.name = rosserest
+package.domain = org.example
+source.dir = .
+source.include_exts = py,png,jpg,kv,atlas
+version = 0.1
+requirements = python3,kivy
+android.accept_sdk_license = True
+android.sdk_path = $HOME/android-sdk
+android.ndk_path = $HOME/android-sdk/ndk/25.2.9519653
+android.p4a_dir = $HOME/.local/share/python-for-android
+EOL
+          fi
+
+          # Configuración adicional
           sed -i 's/#android.accept_sdk_license = False/android.accept_sdk_license = True/' buildozer.spec
           sed -i "s|#android.sdk_path =|android.sdk_path = $HOME/android-sdk|" buildozer.spec
           sed -i "s|#android.ndk_path =|android.ndk_path = $HOME/android-sdk/ndk/25.2.9519653|" buildozer.spec
-          sed -i 's/#android.p4a_dir = .*/android.p4a_dir = $HOME\/.local\/share\/python-for-android/' buildozer.spec
+          sed -i "s|#android.p4a_dir =|android.p4a_dir = $HOME/.local/share/python-for-android|" buildozer.spec
 
-      - name: Build APK (with retry)
+      - name: Build APK
         run: |
-          # Primero actualizamos p4a
-          pip install --upgrade python-for-android
+          echo "Instalando python-for-android..."
+          pip install --force-reinstall python-for-android
           
-          # Luego construimos con reintentos
-          for i in 1 2 3; do
-            if buildozer -v android debug 2>&1 | tee build.log; then
-              break
-            fi
-            echo "Intento $i fallido, reintentando..."
-            sleep 10
-          done
+          echo "Listando contenido de p4a_dir..."
+          ls -la $HOME/.local/share/python-for-android
           
-          # Verificar errores críticos
+          echo "Ejecutando buildozer..."
+          buildozer -v android clean
+          buildozer -v android debug 2>&1 | tee build.log
+          
           if grep -q "FileNotFoundError" build.log; then
             echo "Error crítico encontrado"
             exit 1
