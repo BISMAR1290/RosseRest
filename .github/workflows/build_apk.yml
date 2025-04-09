@@ -10,38 +10,61 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
+      - name: Install system dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential ccache git zip unzip openjdk-17-jdk python3-pip libssl-dev curl
-          pip install buildozer cython
+          sudo apt install -y build-essential ccache git zip unzip openjdk-17-jdk python3-pip libssl-dev curl zlib1g-dev
+          pip install buildozer cython==0.29.36
 
-      - name: Install Android SDK and AIDL
+      - name: Install Android SDK with exact versions
         run: |
           mkdir -p $HOME/android-sdk
           curl -o sdk.zip https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
           unzip sdk.zip -d $HOME/android-sdk/cmdline-tools
           mv $HOME/android-sdk/cmdline-tools/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
 
+          # Componentes específicos que funcionan con Buildozer
           yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/android-sdk \
-            "platform-tools" "platforms;android-33" "build-tools;33.0.2" "ndk;25.2.9519653"
+            "platform-tools" "platforms;android-33" "build-tools;30.0.3" "ndk;25.2.9519653"
 
-          echo "export ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
-          echo "export PATH=$HOME/android-sdk/platform-tools:$PATH" >> $GITHUB_ENV
+          # Configuración crítica de variables de entorno
+          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "PATH=$HOME/android-sdk/platform-tools:$HOME/android-sdk/build-tools/30.0.3:$PATH" >> $GITHUB_ENV
+          
+          # Verificar instalación de AIDL
+          ls -la $HOME/android-sdk/build-tools/30.0.3/aidl
+          $HOME/android-sdk/build-tools/30.0.3/aidl --version || true
+
+      - name: Configure Buildozer
+        run: |
+          buildozer init
+          # Configuraciones esenciales para evitar errores
+          sed -i 's/#android.accept_sdk_license = False/android.accept_sdk_license = True/' buildozer.spec
+          sed -i 's/#android.sdk_path = /android.sdk_path = $HOME\/android-sdk/' buildozer.spec
+          sed -i 's/#android.ndk_path = /android.ndk_path = $HOME\/android-sdk\/ndk\/25.2.9519653/' buildozer.spec
 
       - name: Build APK
         run: |
-          buildozer android debug
+          buildozer -v android debug 2>&1 | tee build.log
+          grep -i "error" build.log && exit 1 || exit 0
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug.apk
           path: bin/*.apk
+
+      - name: Upload build log
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-log
+          path: build.log
