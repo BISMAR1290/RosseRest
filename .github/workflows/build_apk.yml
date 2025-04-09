@@ -12,6 +12,11 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Clean any existing builds
+        run: |
+          rm -rf .buildozer
+          rm -f buildozer.spec
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -20,10 +25,10 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential ccache git zip unzip openjdk-17-jdk python3-pip libssl-dev curl zlib1g-dev
+          sudo apt install -y build-essential ccache git zip unzip openjdk-17-jdk python3-pip libssl-dev curl zlib1g-dev libncurses5-dev
           pip install buildozer cython==0.29.36
 
-      - name: Install Android SDK with exact versions
+      - name: Install Android SDK
         run: |
           mkdir -p $HOME/android-sdk
           curl -o sdk.zip https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
@@ -31,38 +36,36 @@ jobs:
           mv $HOME/android-sdk/cmdline-tools/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
 
           yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/android-sdk \
-            "platform-tools" "platforms;android-33" "build-tools;30.0.3" "ndk;25.2.9519653"
+            "platform-tools" "platforms;android-33" "build-tools;34.0.0" "ndk;25.2.9519653" "cmake;3.22.1"
 
           echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
           echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
-          echo "PATH=$HOME/android-sdk/platform-tools:$HOME/android-sdk/build-tools/30.0.3:$PATH" >> $GITHUB_ENV
-          
-          chmod +x $HOME/android-sdk/build-tools/30.0.3/aidl
+          echo "PATH=$HOME/android-sdk/platform-tools:$HOME/android-sdk/build-tools/34.0.0:$PATH" >> $GITHUB_ENV
 
-      - name: Configure Buildozer
+      - name: Initialize Buildozer
         run: |
-          if [ -f buildozer.spec ]; then
-            echo "buildozer.spec ya existe, actualizando configuraciones clave..."
-            OLD_SDK_PATH=$(grep '^android.sdk_path' buildozer.spec || echo '')
-            OLD_NDK_PATH=$(grep '^android.ndk_path' buildozer.spec || echo '')
-          else
-            buildozer init
-          fi
-
+          buildozer init
           sed -i 's/#android.accept_sdk_license = False/android.accept_sdk_license = True/' buildozer.spec
-          sed -i "s|#android.sdk_path =|android.sdk_path = $HOME/android-sdk|" buildozer.spec
-          sed -i "s|#android.ndk_path =|android.ndk_path = $HOME/android-sdk/ndk/25.2.9519653|" buildozer.spec
-          
-          if [ -n "$OLD_SDK_PATH" ]; then echo "$OLD_SDK_PATH" >> buildozer.spec; fi
-          if [ -n "$OLD_NDK_PATH" ]; then echo "$OLD_NDK_PATH" >> buildozer.spec; fi
+          sed -i 's/#android.sdk_path = /android.sdk_path = $HOME\/android-sdk/' buildozer.spec
+          sed -i 's/#android.ndk_path = /android.ndk_path = $HOME\/android-sdk\/ndk\/25.2.9519653/' buildozer.spec
+          sed -i 's/#android.arch = arm64-v8a/android.arch = arm64-v8a/' buildozer.spec
 
-      - name: Build APK
+      - name: Build with debug info
         run: |
+          buildozer -v android clean
           buildozer -v android debug 2>&1 | tee build.log
-          grep -i "error" build.log && exit 1 || exit 0
+          ! grep -i "error" build.log
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: app-debug.apk
           path: bin/*.apk
+
+      - name: Upload build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
